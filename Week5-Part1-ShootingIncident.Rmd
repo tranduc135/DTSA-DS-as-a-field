@@ -1,0 +1,159 @@
+---
+title: "ShootingIncident"
+author: "Student Name (Removed for assessment)"
+date: "2024-01-06"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(readr)
+```
+
+## Step 1: Import data
+This bellow code import data from https://catalog.data.gov/dataset
+
+```{r import_data}
+url <- "https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+
+data = read_csv(url, show_col_types = FALSE)
+```
+
+## Step 2: Tidy and Transform Data
+Print a summary of the data
+```{r summary}
+summary(data)
+```
+
+### Select interested features
+Select interested features only
+```{r features}
+data <- data %>%
+  select(c(OCCUR_DATE, OCCUR_TIME, BORO, LOCATION_DESC, STATISTICAL_MURDER_FLAG, 
+           PERP_AGE_GROUP, PERP_SEX, PERP_RACE, VIC_AGE_GROUP, VIC_SEX, VIC_RACE,
+           Latitude, Longitude))
+```
+
+### Transform data
+Convert date and time to date types
+```{r date}
+datat <- data %>%
+  mutate(OCCUR_DATE = mdy(OCCUR_DATE))
+```
+
+There are missing data in some columns, such as `PERP_AGE_GROUP` or `PERP_SEX`, `PERP_RACE`.
+
+There are some way to handle it:
+
+- Replace NA with a median of the total value (e.g. age median for `PERP_AGE_GROUP`)
+- Adding a new type for NA value, such as "UNKNOWN" for missing value of `PERP_SEX`
+
+## Step 3: Add Visualizations and Analysis
+
+### Showing number of incidents by borough
+```{r borough}
+data %>%
+  ggplot(aes(x=BORO))+
+  geom_bar(stat="count", width=0.7, fill="steelblue")+
+  labs(title = "Incidents by borough", y = "Incidents") +
+  theme_minimal()
+```
+
+Since there's lat/long data, let's plot it in 2D map by borou to see the spacial distribution
+```{r borough_lat_long, warning=FALSE}
+data %>%
+  ggplot(aes(x=Longitude, y=Latitude)) + 
+  geom_point(aes(color=BORO))
+```
+
+Plot the data with density
+
+```{r borough_lat_long_density, warning=FALSE}
+data %>%
+  ggplot(aes(x=Longitude, y=Latitude)) + 
+  geom_bin2d(bins = 100) +
+  scale_fill_continuous(type = "viridis") +
+  theme_bw()
+```
+Observation:
+
+- There are high number of incidents in center of BROOKLYN, and between MANHATAN & BRONX
+
+### Create a new variable for hours
+```{r hour}
+data <- data %>%
+  mutate(hour = hour(OCCUR_TIME))
+```
+
+Plot the incident by hours
+```{r hour_plot}
+data %>%
+  ggplot(aes(x=hour))+
+  geom_line(stat="count") +
+  geom_point(stat="count")
+```
+
+
+Observation:
+
+- The number of incident increase significantly on evening and mid-night
+
+Plot the incidents in hours, counting by borough
+
+```{r hour_plot_boro}
+data %>%
+  ggplot(aes(x=hour, col=BORO))+
+  geom_line(stat="count") +
+  geom_point(stat="count")
+```
+
+### Modeling data
+```{r data_total_by_hours}
+data_totals_by_hour <- data %>%
+  count(hour)
+  
+summary(data_totals_by_hour)
+```
+
+From the above visualization, let try a quadratic model between the number of incident and hour.
+
+Firstly, create a new variable hour2:
+```{r hour2}
+data_totals_by_hour <- data_totals_by_hour %>%
+  mutate(hour2=hour^2)
+```
+
+Then create a model
+``` {r model}
+quadraticModel <- lm(n ~ hour + hour2, data=data_totals_by_hour)
+summary(quadraticModel)
+```
+
+Let plot the model prediction
+```{r model_pred}
+data_totals_by_hour_pred <- data_totals_by_hour %>%
+  mutate(pred = predict(quadraticModel))
+
+data_totals_by_hour_pred %>%
+  ggplot() +
+  geom_point(aes(x = hour, y = n), color = "blue") +
+  geom_point(aes(x = hour, y = pred), color = "red")
+```
+
+## Conclusion
+- There is a relationship between the time of the day (hour), and the chance that an shooting incident happens.
+- The relation ship can be represented by a quadratic model between the hour of the day and the number of the incidents
+
+Bias:
+
+- People tend to think day light is safer than evening or night
+- Personally, I think dense area with high population might likely to have more incidents. The future improvement could be include the population of the areas into the data set.
+- I didn't check gender or race into the report. One way to improve is to consider theses factor as well.
+
+## Session info
+```{r session_info}
+sessionInfo()
+```
